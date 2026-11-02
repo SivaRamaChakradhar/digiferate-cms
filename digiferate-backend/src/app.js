@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 
 import screenRoutes from "./routes/screen.routes.js";
+import pairingRoutes from "./routes/pairing.routes.js";
 
 const app = express();
 
@@ -15,5 +16,6 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/screens", screenRoutes);
+app.use("/api/pairings", pairingRoutes);
 
 export default app;
