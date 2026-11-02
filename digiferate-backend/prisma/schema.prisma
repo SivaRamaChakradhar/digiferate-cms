@@ -1,0 +1,254 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  importFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// -------------------------
+// ENUMS
+// -------------------------
+
+enum ScreenStatus {
+  UNPAIRED
+  PAIRED
+  INACTIVE
+}
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum AssetType {
+  IMAGE
+  VIDEO
+}
+
+// -------------------------
+// SCREEN MANAGEMENT
+// -------------------------
+
+model Screen {
+  id         String @id @default(uuid()) @db.Uuid
+  customName String
+  area       String
+  city       String
+  state      String
+  country    String
+
+  status ScreenStatus @default(UNPAIRED)
+
+  pairingCodes         PairingCode[]
+  pairings             ScreenPairing[]
+  contentAssignments   ContentAssignment[]
+  wallpaperAssignments WallpaperAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([city, state, country])
+}
+
+// -------------------------
+// PAIRING CODE MANAGEMENT
+// -------------------------
+
+model PairingCode {
+  id         String @id @default(uuid()) @db.Uuid
+  codeHash   String @unique
+  codeSuffix String
+
+  screenId String @db.Uuid
+  screen   Screen @relation(fields: [screenId], references: [id], onDelete: Cascade)
+
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([screenId])
+  @@index([expiresAt])
+}
+
+// -------------------------
+// ANDROID DEVICE MANAGEMENT
+// -------------------------
+
+model AndroidDevice {
+  id               String  @id @default(uuid()) @db.Uuid
+  deviceIdentifier String  @unique
+  deviceName       String?
+  deviceModel      String?
+
+  pairings ScreenPairing[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// -------------------------
+// SCREEN PAIRING HISTORY
+// -------------------------
+
+model ScreenPairing {
+  id String @id @default(uuid()) @db.Uuid
+
+  screenId String @db.Uuid
+  screen   Screen @relation(fields: [screenId], references: [id], onDelete: Restrict)
+
+  androidDeviceId String        @db.Uuid
+  androidDevice   AndroidDevice @relation(fields: [androidDeviceId], references: [id], onDelete: Restrict)
+
+  pairedAt   DateTime  @default(now())
+  unpairedAt DateTime?
+
+  @@index([screenId, unpairedAt])
+  @@index([androidDeviceId, unpairedAt])
+}
+
+// -------------------------
+// CONTENT MANAGEMENT
+// -------------------------
+
+model Content {
+  id      String        @id @default(uuid()) @db.Uuid
+  title   String?
+  message String?       @db.Text
+  status  ContentStatus @default(DRAFT)
+
+  assets      ContentAsset[]
+  assignments ContentAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+// -------------------------
+// CONTENT ASSETS
+// -------------------------
+
+model ContentAsset {
+  id        String    @id @default(uuid()) @db.Uuid
+  assetType AssetType
+
+  fileName  String?
+  url       String
+  publicId  String
+  mimeType  String?
+  sizeBytes BigInt?
+  sortOrder Int     @default(0)
+
+  contentId String  @db.Uuid
+  content   Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([contentId])
+}
+
+// -------------------------
+// CONTENT ASSIGNMENT
+// -------------------------
+
+model ContentAssignment {
+  id String @id @default(uuid()) @db.Uuid
+
+  contentId String  @db.Uuid
+  content   Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  screenId String @db.Uuid
+  screen   Screen @relation(fields: [screenId], references: [id], onDelete: Restrict)
+
+  assignedAt   DateTime  @default(now())
+  unassignedAt DateTime?
+
+  @@index([screenId, unassignedAt])
+  @@index([contentId])
+}
+
+// -------------------------
+// WALLPAPER MANAGEMENT
+// -------------------------
+
+model Wallpaper {
+  id       String  @id @default(uuid()) @db.Uuid
+  name     String
+  imageUrl String
+  publicId String
+  isActive Boolean @default(true)
+
+  assignments WallpaperAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// -------------------------
+// WALLPAPER ASSIGNMENT
+// -------------------------
+
+model WallpaperAssignment {
+  id String @id @default(uuid()) @db.Uuid
+
+  screenId String @db.Uuid
+  screen   Screen @relation(fields: [screenId], references: [id], onDelete: Restrict)
+
+  wallpaperId String    @db.Uuid
+  wallpaper   Wallpaper @relation(fields: [wallpaperId], references: [id], onDelete: Restrict)
+
+  assignedAt DateTime  @default(now())
+  removedAt  DateTime?
+
+  @@index([screenId, removedAt])
+  @@index([wallpaperId])
+}
+
+// -------------------------
+// FACILITY CATEGORIES
+// -------------------------
+
+model FacilityCategory {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String  @unique
+  slug        String  @unique
+  description String? @db.Text
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+
+  images FacilityImage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// -------------------------
+// FACILITY IMAGES
+// -------------------------
+
+model FacilityImage {
+  id String @id @default(uuid()) @db.Uuid
+
+  title     String?
+  imageUrl  String
+  publicId  String
+  altText   String?
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  categoryId String           @db.Uuid
+  category   FacilityCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([categoryId])
+}
