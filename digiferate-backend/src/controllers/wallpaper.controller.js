@@ -2,7 +2,10 @@ import {
     uploadWallpaper, 
     getAllWallpapers, 
     getWallpaperById, 
-    updateWallpaper, deleteWallpaper } from "../services/wallpaper.service.js";
+    updateWallpaper, 
+    deleteWallpaper,
+    updateWallpaperStatus
+ } from "../services/wallpaper.service.js";
 
 const createWallpaper = async (req, res) => {
     try{
@@ -118,5 +121,40 @@ const removeWallpaper = async (req, res) => {
   }
 };
 
+const changeWallpaperStatus = async (req, res) => {
+  try {
+    const { isActive } = req.body;
 
-export { createWallpaper, getWallpapers, getWallpaper, editWallpaper, removeWallpaper };
+    const wallpaper = await updateWallpaperStatus(
+      req.params.id,
+      isActive
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `Wallpaper ${
+        isActive ? "activated" : "deactivated"
+      } successfully`,
+      data: wallpaper,
+    });
+  } catch (error) {
+    console.error("Wallpaper status update error:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.statusCode
+        ? error.message
+        : "Failed to update wallpaper status",
+    });
+  }
+};
+
+
+export { 
+    createWallpaper, 
+    getWallpapers, 
+    getWallpaper, 
+    editWallpaper, 
+    removeWallpaper,
+    changeWallpaperStatus,
+};

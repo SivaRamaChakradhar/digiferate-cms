@@ -160,4 +160,36 @@ const deleteWallpaper = async (id) => {
   };
 };
 
-export { uploadWallpaper, getAllWallpapers, getWallpaperById, updateWallpaper, deleteWallpaper };
+const updateWallpaperStatus = async (id, isActive) => {
+  if (typeof isActive !== "boolean") {
+    const error = new Error("isActive must be a boolean");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const wallpaper = await prisma.wallpaper.findUnique({
+    where: { id },
+  });
+
+  if (!wallpaper) {
+    const error = new Error("Wallpaper not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const updatedWallpaper = await prisma.wallpaper.update({
+    where: { id },
+    data: { isActive },
+  });
+
+  return updatedWallpaper;
+};
+
+export { 
+    uploadWallpaper, 
+    getAllWallpapers, 
+    getWallpaperById, 
+    updateWallpaper, 
+    deleteWallpaper,
+    updateWallpaperStatus,
+ };
