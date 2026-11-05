@@ -1,10 +1,16 @@
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import DashboardLayout from "./components/layout/DashboardLayout";
+import Dashboard from "./pages/Dashboard/Dashboard";
+
 function App() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950">
-      <h1 className="text-4xl font-bold text-white">
-        Digiferate CMS
-      </h1>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route element={<DashboardLayout />}>
+          <Route path="/" element={<Dashboard />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }
 
