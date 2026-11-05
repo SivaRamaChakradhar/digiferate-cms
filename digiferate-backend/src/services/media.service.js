@@ -1,24 +1,35 @@
+
 import prisma from "../config/database.js";
-import cloudinary from "../config/cloudinary.js";
+import supabase from "../config/supabase.js";
+import crypto from "node:crypto";
+import path from "node:path";
 
-const uploadToCloudinary = (file) => {
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: "digiferate/content",
-        resource_type: "auto",
-      },
-      (error, result) => {
-        if (error) {
-          return reject(error);
-        }
+const BUCKET_NAME = "digiferate-media";
 
-        resolve(result);
-      }
-    );
+const uploadToSupabase = async (file, contentId) => {
+  const extension = path.extname(file.originalname);
+  const fileName = `${crypto.randomUUID()}${extension}`;
+  const storagePath = `content/${contentId}/${fileName}`;
 
-    uploadStream.end(file.buffer);
-  });
+  const { data, error } = await supabase.storage
+    .from(BUCKET_NAME)
+    .upload(storagePath, file.buffer, {
+      contentType: file.mimetype,
+      upsert: false,
+    });
+
+  if (error) {
+    throw new Error(`Supabase upload failed: ${error.message}`);
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from(BUCKET_NAME)
+    .getPublicUrl(data.path);
+
+  return {
+    storagePath: data.path,
+    publicUrl: publicUrlData.publicUrl,
+  };
 };
 
 const uploadContentAsset = async (contentId, file) => {
@@ -33,13 +44,13 @@ const uploadContentAsset = async (contentId, file) => {
     throw error;
   }
 
-  // 2. Upload file to Cloudinary
-  const uploadedFile = await uploadToCloudinary(file);
-
-  // 3. Determine asset type
+  // 2. Determine asset type
   const assetType = file.mimetype.startsWith("image/")
     ? "IMAGE"
     : "VIDEO";
+
+  // 3. Upload file to Supabase Storage
+  const uploadedFile = await uploadToSupabase(file, contentId);
 
   try {
     // 4. Save asset metadata in PostgreSQL
@@ -48,8 +59,8 @@ const uploadContentAsset = async (contentId, file) => {
         contentId,
         assetType,
         fileName: file.originalname,
-        url: uploadedFile.secure_url,
-        publicId: uploadedFile.public_id,
+        url: uploadedFile.publicUrl,
+        publicId: uploadedFile.storagePath,
         mimeType: file.mimetype,
         sizeBytes: BigInt(file.size),
       },
@@ -57,12 +68,14 @@ const uploadContentAsset = async (contentId, file) => {
 
     return asset;
   } catch (error) {
-    // 5. Clean up Cloudinary if database insertion fails
-    await cloudinary.uploader.destroy(uploadedFile.public_id, {
-      resource_type: uploadedFile.resource_type,
-    }).catch((cleanupError) => {
-      console.error("Cloudinary cleanup failed:", cleanupError);
-    });
+    // 5. Clean up Supabase Storage if database insertion fails
+    const { error: cleanupError } = await supabase.storage
+      .from(BUCKET_NAME)
+      .remove([uploadedFile.storagePath]);
+
+    if (cleanupError) {
+      console.error("Supabase cleanup failed:", cleanupError);
+    }
 
     throw error;
   }
@@ -83,23 +96,18 @@ const deleteContentAsset = async (contentId, assetId) => {
     throw error;
   }
 
-  // 2. Determine Cloudinary resource type
-  const resourceType =
-    asset.assetType === "VIDEO" ? "video" : "image";
+  // 2. Delete file from Supabase Storage
+  const { error: storageError } = await supabase.storage
+    .from(BUCKET_NAME)
+    .remove([asset.publicId]);
 
-  // 3. Delete from Cloudinary
-  const result = await cloudinary.uploader.destroy(
-    asset.publicId,
-    {
-      resource_type: resourceType,
-    }
-  );
-
-  if (!["ok", "not found"].includes(result.result)) {
-    throw new Error("Failed to delete media from Cloudinary");
+  if (storageError) {
+    throw new Error(
+      `Failed to delete media from Supabase: ${storageError.message}`
+    );
   }
 
-  // 4. Delete metadata from PostgreSQL
+  // 3. Delete metadata from PostgreSQL
   await prisma.contentAsset.delete({
     where: {
       id: assetId,

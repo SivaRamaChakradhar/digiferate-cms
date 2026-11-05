@@ -1,25 +1,35 @@
+
 import prisma from '../config/database.js';
-import cloudinary from '../config/cloudinary.js';
+import supabase from '../config/supabase.js';
+import crypto from 'node:crypto';
+import path from 'node:path';
 
-const uploadFacilityImageToCloudinary = async (file) => {
-    return new Promise((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
-            {
-                folder: 'facility_images',
-                resource_type: 'image',
-            },
-            (error, result) => {
-                if(error) {
-                    return reject(error);
-                }
+const BUCKET_NAME = 'digiferate-media';
 
-                resolve(result);
-            }
-        );
+const uploadFacilityImageToSupabase = async (file, categoryId) => {
+  const extension = path.extname(file.originalname) || '.jpg';
+  const filePath = `facility-images/${categoryId}/${crypto.randomUUID()}${extension}`;
 
-        uploadStream.end(file.buffer);
+  const { data, error } = await supabase.storage
+    .from(BUCKET_NAME)
+    .upload(filePath, file.buffer, {
+      contentType: file.mimetype,
+      upsert: false,
     });
-}
+
+  if (error) {
+    throw new Error(`Failed to upload facility image: ${error.message}`);
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from(BUCKET_NAME)
+    .getPublicUrl(data.path);
+
+  return {
+    imageUrl: publicUrlData.publicUrl,
+    publicId: data.path,
+  };
+};
 
 export const uploadFacilityImage = async (categoryId, file, data) => {
   if (!file) {
@@ -38,7 +48,7 @@ export const uploadFacilityImage = async (categoryId, file, data) => {
     throw new Error("Cannot upload images to an inactive category");
   }
 
-  const uploadedImage = await uploadFacilityImageToCloudinary(file);
+  const uploadedImage = await uploadFacilityImageToSupabase(file, categoryId);
 
   try {
     const facilityImage = await prisma.facilityImage.create({
@@ -49,22 +59,24 @@ export const uploadFacilityImage = async (categoryId, file, data) => {
           ? Number(data.sortOrder)
           : 0,
         categoryId,
-        imageUrl: uploadedImage.secure_url,
-        publicId: uploadedImage.public_id,
+        imageUrl: uploadedImage.imageUrl,
+        publicId: uploadedImage.publicId,
       },
     });
 
     return facilityImage;
   } catch (error) {
-    // Avoid leaving an orphaned Cloudinary image
-    await cloudinary.uploader.destroy(uploadedImage.public_id, {
-      resource_type: "image",
-    });
+    const { error: cleanupError } = await supabase.storage
+      .from(BUCKET_NAME)
+      .remove([uploadedImage.publicId]);
+
+    if (cleanupError) {
+      console.error("Supabase cleanup failed:", cleanupError);
+    }
 
     throw error;
   }
 };
-
 
 export const getFacilityImagesByCategory = async (categoryId) => {
   const category = await prisma.facilityCategory.findUnique({
@@ -124,7 +136,7 @@ export const updateFacilityImage = async (id, data) => {
   });
 };
 
-// Delete facility image from Cloudinary and database
+// Delete facility image from Supabase Storage and database
 export const deleteFacilityImage = async (id) => {
   const image = await prisma.facilityImage.findUnique({
     where: { id },
@@ -134,18 +146,12 @@ export const deleteFacilityImage = async (id) => {
     throw new Error("Facility image not found");
   }
 
-  const cloudinaryResult = await cloudinary.uploader.destroy(
-    image.publicId,
-    { resource_type: "image" }
-  );
+  const { error } = await supabase.storage
+    .from(BUCKET_NAME)
+    .remove([image.publicId]);
 
-  // "not found" means the Cloudinary asset is already absent.
-  // We can still clean up its database record.
-  if (
-    cloudinaryResult.result !== "ok" &&
-    cloudinaryResult.result !== "not found"
-  ) {
-    throw new Error("Failed to delete image from Cloudinary");
+  if (error) {
+    throw new Error(`Failed to delete facility image: ${error.message}`);
   }
 
   await prisma.facilityImage.delete({

@@ -1,24 +1,35 @@
+
 import prisma from "../config/database.js";
-import cloudinary from "../config/cloudinary.js";
+import supabase from "../config/supabase.js";
+import crypto from "node:crypto";
+import path from "node:path";
 
-const uploadToCloudinary = (file) => {
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: "digiferate/wallpapers",
-        resource_type: "image",
-      },
-      (error, result) => {
-        if (error) {
-          return reject(error);
-        }
+const BUCKET_NAME = "digiferate-media";
 
-        resolve(result);
-      }
-    );
+const uploadToSupabase = async (file) => {
+  const extension = path.extname(file.originalname);
+  const fileName = `${crypto.randomUUID()}${extension}`;
+  const storagePath = `wallpapers/${fileName}`;
 
-    uploadStream.end(file.buffer);
-  });
+  const { data, error } = await supabase.storage
+    .from(BUCKET_NAME)
+    .upload(storagePath, file.buffer, {
+      contentType: file.mimetype,
+      upsert: false,
+    });
+
+  if (error) {
+    throw new Error(`Supabase upload failed: ${error.message}`);
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from(BUCKET_NAME)
+    .getPublicUrl(data.path);
+
+  return {
+    storagePath: data.path,
+    publicUrl: publicUrlData.publicUrl,
+  };
 };
 
 const uploadWallpaper = async (name, file) => {
@@ -28,27 +39,29 @@ const uploadWallpaper = async (name, file) => {
     throw error;
   }
 
-  // Upload image to Cloudinary
-  const uploadedImage = await uploadToCloudinary(file);
+  // 1. Upload image to Supabase Storage
+  const uploadedImage = await uploadToSupabase(file);
 
   try {
-    // Save wallpaper metadata in PostgreSQL
+    // 2. Save wallpaper metadata in PostgreSQL
     const wallpaper = await prisma.wallpaper.create({
       data: {
         name: name.trim(),
-        imageUrl: uploadedImage.secure_url,
-        publicId: uploadedImage.public_id,
+        imageUrl: uploadedImage.publicUrl,
+        publicId: uploadedImage.storagePath,
       },
     });
 
     return wallpaper;
   } catch (error) {
-    // Clean up Cloudinary if database insertion fails
-    await cloudinary.uploader.destroy(uploadedImage.public_id, {
-      resource_type: "image",
-    }).catch((cleanupError) => {
-      console.error("Cloudinary cleanup failed:", cleanupError);
-    });
+    // 3. Clean up Supabase Storage if database insertion fails
+    const { error: cleanupError } = await supabase.storage
+      .from(BUCKET_NAME)
+      .remove([uploadedImage.storagePath]);
+
+    if (cleanupError) {
+      console.error("Supabase cleanup failed:", cleanupError);
+    }
 
     throw error;
   }
@@ -137,19 +150,18 @@ const deleteWallpaper = async (id) => {
     throw error;
   }
 
-  // Delete image from Cloudinary
-  const result = await cloudinary.uploader.destroy(
-    wallpaper.publicId,
-    {
-      resource_type: "image",
-    }
-  );
+  // 1. Delete image from Supabase Storage
+  const { error: storageError } = await supabase.storage
+    .from(BUCKET_NAME)
+    .remove([wallpaper.publicId]);
 
-  if (!["ok", "not found"].includes(result.result)) {
-    throw new Error("Failed to delete wallpaper from Cloudinary");
+  if (storageError) {
+    throw new Error(
+      `Failed to delete wallpaper from Supabase: ${storageError.message}`
+    );
   }
 
-  // Delete wallpaper record from PostgreSQL
+  // 2. Delete wallpaper record from PostgreSQL
   await prisma.wallpaper.delete({
     where: { id },
   });
@@ -185,11 +197,11 @@ const updateWallpaperStatus = async (id, isActive) => {
   return updatedWallpaper;
 };
 
-export { 
-    uploadWallpaper, 
-    getAllWallpapers, 
-    getWallpaperById, 
-    updateWallpaper, 
-    deleteWallpaper,
-    updateWallpaperStatus,
- };
+export {
+  uploadWallpaper,
+  getAllWallpapers,
+  getWallpaperById,
+  updateWallpaper,
+  deleteWallpaper,
+  updateWallpaperStatus,
+};
