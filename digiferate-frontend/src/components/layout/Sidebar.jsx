@@ -23,8 +23,6 @@ const navigation = [
     title: "SCREEN MANAGEMENT",
     items: [
       { name: "Pair Screen", path: "/screens", icon: Monitor },
-      { name: "Layout Editor", path: "/layout", icon: PanelsTopLeft },
-      { name: "Playback Screen", path: "/playback", icon: Play },
     ],
   },
   {
@@ -34,12 +32,6 @@ const navigation = [
       { name: "Media Library", path: "/media", icon: Images },
       { name: "Wallpapers", path: "/wallpapers", icon: Wallpaper },
       { name: "Facilities", path: "/facilities", icon: Building2 },
-    ],
-  },
-  {
-    title: "CONFIGURATION",
-    items: [
-      { name: "CV Configuration", path: "/cv-configuration", icon: Settings },
     ],
   },
 ];
