@@ -1,5 +1,13 @@
 import contentService from "../services/content.service.js";
 
+const serializeContent = (content) => ({
+  ...content,
+  assets: content.assets?.map((asset) => ({
+    ...asset,
+    sizeBytes: asset.sizeBytes?.toString() ?? null,
+  })),
+});
+
 const createContent = async (req, res) => {
   try {
     const { title, message } = req.body;
@@ -39,7 +47,7 @@ const createContent = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: "Content created successfully",
-      data: content,
+      data: serializeContent(content),
     });
   } catch (error) {
     console.error("Create content error:", error);
@@ -58,7 +66,7 @@ const getAllContent = async (req, res) => {
     return res.status(200).json({
       success: true,
       count: content.length,
-      data: content,
+      data: content.map(serializeContent),
     });
   } catch (error) {
     console.error("Get content error:", error);
@@ -83,7 +91,7 @@ const getContentById = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: content,
+      data: serializeContent(content),
     });
   } catch (error) {
     console.error("Get content by ID error:", error);
@@ -149,7 +157,7 @@ const updateContent = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Content updated successfully",
-      data: content,
+      data: serializeContent(content),
     });
   } catch (error) {
     console.error("Update content error:", error);
