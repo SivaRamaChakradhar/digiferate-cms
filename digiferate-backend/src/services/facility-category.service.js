@@ -1,4 +1,5 @@
 import prisma from '../config/database.js';
+import cloudinary from '../config/cloudinary.js';
 
 const generateSlug = (name) => {
     return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -73,6 +74,31 @@ const updateCategory = async (id, data) => {
 };
 
 const deleteCategory = async (id) => {
+  const category = await prisma.facilityCategory.findUnique({
+    where: { id },
+    include: {
+      images: {
+        select: { publicId: true },
+      },
+    },
+  });
+
+  if (!category) {
+    const error = new Error('Facility category not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  for (const image of category.images) {
+    const result = await cloudinary.uploader.destroy(image.publicId, {
+      resource_type: 'image',
+    });
+
+    if (!['ok', 'not found'].includes(result.result)) {
+      throw new Error('Failed to delete a facility image from Cloudinary');
+    }
+  }
+
   return prisma.facilityCategory.delete({
     where: { id },
   });

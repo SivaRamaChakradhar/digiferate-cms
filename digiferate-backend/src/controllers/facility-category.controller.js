@@ -72,7 +72,13 @@ const deleteCategoryController = async (req, res) => {
       message: "Facility category deleted successfully",
     });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    console.error("Delete facility category error:", error);
+
+    res.status(error.statusCode || 500).json({
+      message: error.statusCode
+        ? error.message
+        : "Failed to delete facility category",
+    });
   }
 };
 

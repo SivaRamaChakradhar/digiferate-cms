@@ -13,7 +13,7 @@ const router = express.Router();
 
 router.post(
   "/:id/images",
-  uploadWallpaper.single("image"),
+  uploadWallpaper.single("file"),
   uploadFacilityImageController
 );
 
